@@ -31,6 +31,17 @@ DOMAIN=vpn.example.com bash <(curl -fsSL https://raw.githubusercontent.com/Zippo
 After 2вЂ“3 minutes it prints the panel URL, login, password and the subscription link.
 They are also saved to `/root/3xui-info.txt`.
 
+## Decoy website
+
+`https://<domain>/` serves a realistic landing page of a small web studio (`decoy.html`, brand name picked at random),
+so the server looks like an ordinary website. To install or refresh it on an existing server without reinstalling:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Zippo102-89/deploy-3xui/main/update-decoy.sh)
+```
+
+Set your own name with `BRAND="My Studio"` in front of the command. The page lives in `/var/www/3xui-decoy/index.html`.
+
 ## Options
 
 | Variable | Default | Meaning |

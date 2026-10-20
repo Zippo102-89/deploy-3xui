@@ -409,13 +409,25 @@ server {
 EOF
 ln -sf /etc/nginx/sites-available/3xui.conf /etc/nginx/sites-enabled/3xui.conf
 
+# decoy website (studio landing page); brand is random so servers don't share one fingerprint
 mkdir -p /var/www/3xui-decoy
-cat > /var/www/3xui-decoy/index.html <<'EOF'
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Welcome</title>
+DECOY_URL=${DECOY_URL:-https://raw.githubusercontent.com/Zippo102-89/deploy-3xui/main/decoy.html}
+BRANDS=("Lumacraft Studio" "Arcvale Digital" "Brightmoor Labs" "Quillhaven Studio" "Kestrelbay Digital"
+        "Fernwick Studio" "Solent Works" "Northmere Labs" "Cobalt Finch Studio" "Silverbirch Digital")
+BRAND=${BRAND:-${BRANDS[$(( $(od -An -N1 -tu1 /dev/urandom | tr -d ' ') % ${#BRANDS[@]} ))]}}
+if curl -fsSL --max-time 15 -o /tmp/decoy.html "$DECOY_URL"; then
+  sed -e "s/__BRAND__/$BRAND/g" -e "s/__YEAR__/$(date +%Y)/g" -e "s/__HOST__/$DOMAIN/g" /tmp/decoy.html \
+    > /var/www/3xui-decoy/index.html
+  rm -f /tmp/decoy.html
+else
+  warn "could not download decoy page, using a minimal one"
+  cat > /var/www/3xui-decoy/index.html <<EOF
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>$BRAND</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:15vh auto;padding:0 16px;color:#333}</style>
-</head><body><h1>It works</h1><p>This server is up and running.</p></body></html>
+</head><body><h1>$BRAND</h1><p>Web design &amp; development studio. Contact: hello@$DOMAIN</p></body></html>
 EOF
+fi
 
 nginx -t >/dev/null 2>&1 || { nginx -t; die "nginx config test failed"; }
 systemctl enable nginx >/dev/null 2>&1
