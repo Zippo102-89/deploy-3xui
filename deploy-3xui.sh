@@ -9,7 +9,7 @@
 #          │     ├─ /<sub path>       -> subscriptions (127.0.0.1)
 #          │     ├─ /<xhttp path>     -> VLESS XHTTP   (unix socket)
 #          │     ├─ /<port>/<ws path> -> VLESS WS      (127.0.0.1)
-#          │     └─ /<port>/<grpc>    -> Trojan gRPC   (127.0.0.1)
+#          │     └─ /<grpc name>/Tun  -> Trojan gRPC   (127.0.0.1)
 #          └─ any other SNI     -> VLESS Reality + Vision (127.0.0.1:8443)
 #    :80   certbot + redirect to https
 #
@@ -117,7 +117,8 @@ SUB_PATH=$(rnd 10)
 SUBJSON_PATH=$(rnd 10)
 XHTTP_PATH=$(rnd 10)
 WS_PATH="$WS_PORT/$(rnd 10)"
-GRPC_SVC="$GRPC_PORT/$(rnd 10)"
+# plain service name (client path = /<name>/Tun): custom "/a/b" paths break sing-box based clients
+GRPC_SVC=$(rnd 12)
 XHTTP_SOCK="/dev/shm/xhttp-$(rnd 6).sock"
 SUB_ID=$(rnd 16)
 
@@ -290,7 +291,7 @@ api_add "$(inbound "$REMARK xhttp" "$XHTTP_SOCK,0666" 0 vless "$S" "$ST" "$SNIFF
 
 # 4) Trojan gRPC
 S=$(jq -cn --argjson c "$(client "$CLIENT_NAME-grpc" "" "$(rnd 16)")" '{clients:[$c],fallbacks:[]}')
-ST=$(jq -cn --arg svc "/$GRPC_SVC" --arg h "$DOMAIN" --argjson ext "$EXT_TLS" \
+ST=$(jq -cn --arg svc "$GRPC_SVC" --arg h "$DOMAIN" --argjson ext "$EXT_TLS" \
   '{network:"grpc",security:"none",grpcSettings:{serviceName:$svc,authority:$h,multiMode:false},externalProxy:$ext}')
 api_add "$(inbound "$REMARK trojan-grpc" 127.0.0.1 "$GRPC_PORT" trojan "$S" "$ST" "$SNIFF_OFF")"
 
@@ -394,7 +395,7 @@ server {
     }
 
     # Trojan gRPC
-    location /$GRPC_SVC {
+    location /$GRPC_SVC/ {
         client_max_body_size 0;
         grpc_pass grpc://127.0.0.1:$GRPC_PORT;
         grpc_read_timeout 1d;
