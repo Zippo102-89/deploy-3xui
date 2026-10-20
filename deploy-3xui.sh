@@ -25,13 +25,15 @@
 #    ENABLE_UFW=1              open only ssh/80/443 (0 = don't touch firewall)
 #    FORCE=1                   allow running over an existing 3x-ui install
 # =============================================================================
-set -euo pipefail
+set -Eeuo pipefail
 
 # ---------- helpers ----------------------------------------------------------
 c_red=$'\e[31m'; c_grn=$'\e[32m'; c_ylw=$'\e[33m'; c_off=$'\e[0m'
 log()  { echo "${c_grn}==>${c_off} $*"; }
 warn() { echo "${c_ylw}[!]${c_off} $*" >&2; }
 die()  { echo "${c_red}[x] $*${c_off}" >&2; exit 1; }
+# never exit silently: report the failing line and command
+trap 'echo "${c_red}[x] failed at line $LINENO: $BASH_COMMAND${c_off}" >&2' ERR
 
 # random alnum string without SIGPIPE issues under pipefail
 rnd() { head -c 256 /dev/urandom | base64 -w0 | tr -dc 'A-Za-z0-9' | cut -c1-"$1"; }
@@ -114,8 +116,11 @@ sysctl --system >/dev/null 2>&1 || true
 # ---------- firewall (before certbot: needs :80) -----------------------------
 if [[ "$ENABLE_UFW" == 1 ]]; then
   log "configuring ufw (ssh, 80, 443)"
-  SSH_PORT=$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')
-  ufw allow "${SSH_PORT:-22}/tcp" comment ssh >/dev/null
+  # sshd -T fails on some images (e.g. Debian cloud with socket-activated ssh) — never let it abort
+  SSH_PORT=$( { sshd -T 2>/dev/null || true; } | awk '/^port /{print $2; exit}')
+  [[ -n "$SSH_PORT" ]] || SSH_PORT=$( { ss -Htlnp 2>/dev/null || true; } | awk '/sshd|"systemd"/{n=split($4,a,":"); print a[n]; exit}')
+  [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || SSH_PORT=22
+  ufw allow "$SSH_PORT/tcp" comment ssh >/dev/null
   ufw allow 80/tcp comment 'certbot/http' >/dev/null
   ufw allow 443/tcp comment 'nginx sni' >/dev/null
   ufw --force enable >/dev/null
