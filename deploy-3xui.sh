@@ -64,10 +64,25 @@ if [[ -d /usr/local/x-ui && -f /etc/x-ui/x-ui.db && "${FORCE:-0}" != 1 ]]; then
   die "3x-ui already installed in /usr/local/x-ui. Re-run with FORCE=1 to reinstall (old DB is backed up)."
 fi
 
+# a fresh VPS runs cloud-init / unattended-upgrades for a few minutes and holds the apt lock
+apt_wait() {
+  local waited=0
+  if command -v cloud-init >/dev/null 2>&1; then
+    timeout 600 cloud-init status --wait >/dev/null 2>&1 || true
+  fi
+  while pgrep -x 'apt|apt-get|dpkg|unattended-upgr|unattended-upgrade' >/dev/null 2>&1; do
+    (( waited == 0 )) && log "waiting for background system updates to finish (fresh server)..."
+    (( waited >= 900 )) && die "apt is still busy after 15 min; reboot the server and run again"
+    sleep 5; waited=$((waited + 5))
+  done
+}
+APT_OPTS=(-o DPkg::Lock::Timeout=600)
+
 log "installing packages"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq curl ca-certificates jq sqlite3 openssl tar ufw certbot \
+apt_wait
+apt-get "${APT_OPTS[@]}" update -qq
+apt-get "${APT_OPTS[@]}" install -y -qq curl ca-certificates jq sqlite3 openssl tar ufw certbot \
   nginx libnginx-mod-stream dnsutils >/dev/null
 
 IP=$(curl -4 -s --max-time 8 https://api.ipify.org || curl -4 -s --max-time 8 https://ifconfig.me || true)
