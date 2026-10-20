@@ -59,7 +59,8 @@ case "$(uname -m)" in
   *) die "unsupported arch $(uname -m)" ;;
 esac
 
-if [[ -d /usr/local/x-ui && "${FORCE:-0}" != 1 ]]; then
+# a working install has a DB; a leftover from a failed run of this script does not
+if [[ -d /usr/local/x-ui && -f /etc/x-ui/x-ui.db && "${FORCE:-0}" != 1 ]]; then
   die "3x-ui already installed in /usr/local/x-ui. Re-run with FORCE=1 to reinstall (old DB is backed up)."
 fi
 
@@ -174,10 +175,21 @@ systemctl enable x-ui >/dev/null 2>&1
 XUI=/usr/local/x-ui/x-ui
 XRAY=$(ls /usr/local/x-ui/bin/xray-linux-* | head -1)
 
+# x-ui >= 3.10 runs under ProtectSystem=full: /etc is read-only for the service and
+# ReadWritePaths=-/etc/x-ui only applies if the folder already exists — create it first.
+mkdir -p /etc/x-ui /var/log/x-ui
+chmod 700 /etc/x-ui
+
 # first start creates the DB
-systemctl start x-ui; sleep 5; systemctl stop x-ui
 DB=/etc/x-ui/x-ui.db
-[[ -f $DB ]] || die "x-ui did not create $DB"
+systemctl start x-ui
+for _ in $(seq 1 30); do [[ -f $DB ]] && break; sleep 1; done
+if [[ ! -f $DB ]]; then
+  journalctl -u x-ui --no-pager -n 30 >&2 || true
+  die "x-ui did not create $DB (see the log above)"
+fi
+sleep 2
+systemctl stop x-ui
 
 setkv() {  # upsert into settings table
   sqlite3 "$DB" "UPDATE settings SET value='$2' WHERE key='$1';
